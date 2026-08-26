@@ -444,6 +444,8 @@ local function StopRadarPreview(self)
     self.SentinelsRadarPreview = false
     if self.SentinelsRadarFrame then
         self:MakeDraggable(self.SentinelsRadarFrame, nil, false)
+        NSRT.EncounterAlerts[encID][15].Radar = NSRT.EncounterAlerts[encID][16].Radar
+        NSRT.EncounterAlerts[encID][14].Radar = NSRT.EncounterAlerts[encID][16].Radar
     end
 end
 
