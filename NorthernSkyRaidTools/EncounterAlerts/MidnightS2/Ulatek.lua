@@ -3,6 +3,75 @@ local _, NSI = ... -- Internal namespace
 local encID = 3492
 -- /run NSAPI:DebugEncounter(3492)
 
+local GRASPING_FANGS_LEFT = "UlatekGraspingFangsLeftSide"
+local GRASPING_FANGS_RIGHT = "UlatekGraspingFangsRightSide"
+
+local function GetGraspingFangsAlert()
+    local diffData = NSRT.EncounterAlerts[encID] and NSRT.EncounterAlerts[encID][16]
+    return diffData and diffData.GraspingFangsOverview
+end
+
+-- Each side gets its own subgroup string, so "1,2"/"3,4" and "1,3,5,7"/"2,4,6,8" both work.
+-- An empty string means that side tracks nobody; the right side ships empty.
+local function ParseGroupList(text)
+    local subgroups, seen = {}, {}
+    for value in tostring(text or ""):gmatch("%d+") do
+        local group = tonumber(value)
+        if group and group >= 1 and group <= 8 and not seen[group] then
+            seen[group] = true
+            subgroups[#subgroups + 1] = group
+        end
+    end
+    return subgroups
+end
+
+-- Fallback for the always-on rows when no inactive color is configured: dark enough to read as "no debuff"
+-- next to the regular color, without going fully black on a saturated hue.
+local function DimColor(color)
+    return {color[1] * 0.3 + 0.02, color[2] * 0.3 + 0.02, color[3] * 0.3 + 0.02, 0.85}
+end
+
+local function BuildGraspingFangsOverrides(alert, isLeftSide)
+    local leftColor = alert.LeftBackgroundColor or {1, 0, 0, 1}
+    local rightColor = alert.RightBackgroundColor or {0, 0.45, 1, 1}
+    local leftInactive = alert.LeftInactiveColor or DimColor(leftColor)
+    local rightInactive = alert.RightInactiveColor or DimColor(rightColor)
+    local rightGroups = ParseGroupList(alert.RightGroups)
+    local showInactive = alert.ShowAllPlayers ~= false
+    local previewColumns = {{backgroundColors = leftColor, inactiveBackgroundColors = leftInactive}}
+    if #rightGroups > 0 then previewColumns[2] = {backgroundColors = rightColor, inactiveBackgroundColors = rightInactive} end
+    return {
+        backgroundColors = isLeftSide and leftColor or rightColor,
+        inactiveColors = isLeftSide and leftInactive or rightInactive,
+        showInactive = showInactive,
+        height = alert.BarHeight,
+        subgroups = isLeftSide and ParseGroupList(alert.LeftGroups or "1,2,3,4,5,6,7,8") or rightGroups,
+        sortByRole = alert.SortByRole == true,
+        backgroundOnly = true,
+        hideValue = true,
+        previewColumns = previewColumns,
+    }
+end
+
+function NSI:UpdateUlatekGraspingFangsOverviews(alert)
+    alert = alert or GetGraspingFangsAlert()
+    if not alert then return end
+    self:CreateDebuffOverviewContainers("HARMFUL|!PLAYER|!DISPELLABLE", {isBossAura = true}, 1, 1, GRASPING_FANGS_LEFT, false, true, false, 1, BuildGraspingFangsOverrides(alert, true))
+    self:CreateDebuffOverviewContainers("HARMFUL|!PLAYER|!DISPELLABLE", {isBossAura = true}, 1, 1, GRASPING_FANGS_RIGHT, false, true, false, 1, BuildGraspingFangsOverrides(alert, false))
+end
+
+function NSI:SetUlatekGraspingFangsOverviewsShown(shown)
+    self:SetDebuffOverviewContainersShown(shown, GRASPING_FANGS_LEFT)
+    self:SetDebuffOverviewContainersShown(shown, GRASPING_FANGS_RIGHT)
+end
+
+function NSI:PreviewUlatekGraspingFangsOverviews()
+    local alert = GetGraspingFangsAlert()
+    if not alert then return end
+    self:UpdateUlatekGraspingFangsOverviews(alert)
+    self:PreviewDebuffOverviewContainers(nil, nil, nil, nil, GRASPING_FANGS_LEFT, false, true, false, 1, 6, BuildGraspingFangsOverrides(alert, true))
+end
+
 NSI.InitializeAlerts[encID] = function(self)
     NSRT.EncounterAlerts[encID] = NSRT.EncounterAlerts[encID] or {}
     for i = 14, 16 do
@@ -121,28 +190,49 @@ NSI.InitializeAlerts[encID] = function(self)
     }
     self:AddEncounterAlert(data)
 
-    local UlatekGraspingFangsPreview = [[
-        return function(self)
-            local alert = NSRT.EncounterAlerts[3492][16].GraspingFangsOverview
-            local overviewSettings = NSRT.ReminderSettings.DebuffOverviewSettings
-            self:PreviewDebuffOverviewContainers("HARMFUL|!PLAYER|!DISPELLABLE", {isBossAura = true}, 1, 1, "UlatekGraspingFangsOverview", false, true, false, 1, 6, {
-                backgroundColors = alert.BackgroundColor or {1, 0, 0, 1},
-                height = alert.BarHeight or overviewSettings.Height,
-                backgroundOnly = true,
-                hideValue = true,
-            })
-        end
-    ]]
+    local UlatekGraspingFangsPreview = [[return function(self) self:PreviewUlatekGraspingFangsOverviews() end]]
     local graspingFangsOverviewOptions = {
-        {Type = "Color", label = "Background Color",
-            get = [[return function() local a = NSRT.EncounterAlerts[3492][16].GraspingFangsOverview local c = a.BackgroundColor or {1, 0, 0, 1} return c[1], c[2], c[3], c[4] end]],
-            set = [[return function(NSI, r, g, b, a) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.BackgroundColor = {r, g, b, a} end NSI:CreateDebuffOverviewContainers("HARMFUL|!PLAYER|!DISPELLABLE", {isBossAura = true}, 1, 1, "UlatekGraspingFangsOverview", false, true, false, 1, {backgroundColors = {r, g, b, a}}) end]],},
+        {Type = "Color", label = "Left Side Background Color",
+            get = [[return function() local a = NSRT.EncounterAlerts[3492][16].GraspingFangsOverview local c = a.LeftBackgroundColor or {1, 0, 0, 1} return c[1], c[2], c[3], c[4] end]],
+            set = [[return function(NSI, r, g, b, a) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.LeftBackgroundColor = {r, g, b, a} end NSI:UpdateUlatekGraspingFangsOverviews() end]],},
+        {Type = "Color", label = "Right Side Background Color",
+            get = [[return function() local a = NSRT.EncounterAlerts[3492][16].GraspingFangsOverview local c = a.RightBackgroundColor or {0, 0.45, 1, 1} return c[1], c[2], c[3], c[4] end]],
+            set = [[return function(NSI, r, g, b, a) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.RightBackgroundColor = {r, g, b, a} end NSI:UpdateUlatekGraspingFangsOverviews() end]],},
+        {Type = "Color", label = "Left Side Inactive Color",
+            get = [[return function() local a = NSRT.EncounterAlerts[3492][16].GraspingFangsOverview local c = a.LeftInactiveColor or {0.32, 0.02, 0.02, 0.85} return c[1], c[2], c[3], c[4] end]],
+            set = [[return function(NSI, r, g, b, a) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.LeftInactiveColor = {r, g, b, a} end NSI:UpdateUlatekGraspingFangsOverviews() end]],
+            tooltip = {title = "Left Side Inactive Color", desc = "Color of the left side's rows while that player does not have the debuff."}},
+        {Type = "Color", label = "Right Side Inactive Color",
+            get = [[return function() local a = NSRT.EncounterAlerts[3492][16].GraspingFangsOverview local c = a.RightInactiveColor or {0.02, 0.155, 0.32, 0.85} return c[1], c[2], c[3], c[4] end]],
+            set = [[return function(NSI, r, g, b, a) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.RightInactiveColor = {r, g, b, a} end NSI:UpdateUlatekGraspingFangsOverviews() end]],
+            tooltip = {title = "Right Side Inactive Color", desc = "Color of the right side's rows while that player does not have the debuff."}},
+        {Type = "Checkbox", label = "Show All Players",
+            get = [[return function() local a = NSRT.EncounterAlerts[3492][16].GraspingFangsOverview return a.ShowAllPlayers ~= false end]],
+            set = [[return function(NSI, value) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.ShowAllPlayers = value and true or false end NSI:UpdateUlatekGraspingFangsOverviews() end]],
+            tooltip = {title = "Show All Players", desc = "Keeps a row up for every player on that side, in the inactive color, and switches it to the regular color while they have the debuff. Turn off to only show players who currently have the debuff."}},
+        {Type = "TextEntry", label = "Left Side Groups", inputWidth = 120,
+            get = [[return function() return NSRT.EncounterAlerts[3492][16].GraspingFangsOverview.LeftGroups or "1,2,3,4,5,6,7,8" end]],
+            set = [[return function(NSI, value) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.LeftGroups = value end NSI:UpdateUlatekGraspingFangsOverviews() end]],
+            tooltip = {title = "Left Side Groups", desc = "Raid subgroups shown on the left side, comma separated. Use 1,2 and 3,4 to split by halves, or 1,3,5,7 and 2,4,6,8 for odds and evens."}},
+        {Type = "TextEntry", label = "Right Side Groups", inputWidth = 120,
+            get = [[return function() return NSRT.EncounterAlerts[3492][16].GraspingFangsOverview.RightGroups or "" end]],
+            set = [[return function(NSI, value) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.RightGroups = value end NSI:UpdateUlatekGraspingFangsOverviews() end]],
+            tooltip = {title = "Right Side Groups", desc = "Raid subgroups shown on the right side, comma separated. Empty by default, so only the left side is shown. A group left out of both sides is not tracked."}},
+        {Type = "Checkbox", label = "Sort by Role",
+            get = [[return function() local a = NSRT.EncounterAlerts[3492][16].GraspingFangsOverview return a.SortByRole == true end]],
+            set = [[return function(NSI, value) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.SortByRole = value and true or false end NSI:UpdateUlatekGraspingFangsOverviews() end]],},
         {Type = "Slider", label = "Bar Height", min = 10, max = 100, step = 1,
             get = [[return function() local a = NSRT.EncounterAlerts[3492][16].GraspingFangsOverview return a.BarHeight or NSRT.ReminderSettings.DebuffOverviewSettings.Height end]],
-            set = [[return function(NSI, value) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.BarHeight = value end NSI:CreateDebuffOverviewContainers("HARMFUL|!PLAYER|!DISPELLABLE", {isBossAura = true}, 1, 1, "UlatekGraspingFangsOverview", false, true, false, 1, {height = value}) end]],},
+            set = [[return function(NSI, value) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.BarHeight = value end NSI:UpdateUlatekGraspingFangsOverviews() end]],},
     }
     local data = {group = "Ula'tek", internalID = "GraspingFangsOverview", name = "Grasping Fangs Overview", text = nil, DisplayType = "Bar", encID = encID, phase = 1, TTS = false, dur = 40,
-        spellID = 1311611, id = 0.2, difficulties = {15, 16}, isSpecialDisplay = true, BlockCopy = true, NoEdit = true, Preview = UlatekGraspingFangsPreview, enabled = false, BackgroundColor = {1, 0, 0, 1}, extraOptions = graspingFangsOverviewOptions,
+        -- v2 renamed the first/second keys to left/right, so it re-seeds every one of them
+        Version = {versionNumber = 2, [2] = {LeftBackgroundColor = {1, 0, 0, 1}, RightBackgroundColor = {0, 0.45, 1, 1},
+            LeftInactiveColor = {0.32, 0.02, 0.02, 0.85}, RightInactiveColor = {0.02, 0.155, 0.32, 0.85},
+            LeftGroups = "1,2,3,4,5,6,7,8", RightGroups = "", SortByRole = false, ShowAllPlayers = true}},
+        spellID = 1311611, id = 0.2, difficulties = {15, 16}, isSpecialDisplay = true, BlockCopy = true, NoEdit = true, Preview = UlatekGraspingFangsPreview, enabled = false,
+        LeftBackgroundColor = {1, 0, 0, 1}, RightBackgroundColor = {0, 0.45, 1, 1}, LeftGroups = "1,2,3,4,5,6,7,8", RightGroups = "", SortByRole = false, extraOptions = graspingFangsOverviewOptions,
+        LeftInactiveColor = {0.32, 0.02, 0.02, 0.85}, RightInactiveColor = {0.02, 0.155, 0.32, 0.85}, ShowAllPlayers = true,
         timers = {
             [15] = {180},
             [16] = {180},
@@ -163,18 +253,18 @@ NSI.EncounterAlertStart[encID] = function(self, id)
     end
 
     if overviewAlert and overviewAlert.enabled and self:EvaluateLoad(overviewAlert) then
-        self:CreateDebuffOverviewContainers("HARMFUL|!PLAYER|!DISPELLABLE", {isBossAura = true}, 1, 1, "UlatekGraspingFangsOverview", false, true, false, 1, {backgroundColors = overviewAlert.BackgroundColor or {1, 0, 0, 1}, height = overviewAlert.BarHeight})
+        self:UpdateUlatekGraspingFangsOverviews(overviewAlert)
         self.UlatekGraspingFangsTimers = {}
         for _, applyTime in ipairs(overviewAlert.timers or {}) do
             self.UlatekGraspingFangsTimers[#self.UlatekGraspingFangsTimers + 1] = C_Timer.NewTimer(applyTime, function()
-                if self.EncounterID == encID then self:SetDebuffOverviewContainersShown(true, "UlatekGraspingFangsOverview") end
+                if self.EncounterID == encID then self:SetUlatekGraspingFangsOverviewsShown(true) end
             end)
             self.UlatekGraspingFangsTimers[#self.UlatekGraspingFangsTimers + 1] = C_Timer.NewTimer(applyTime + (overviewAlert.dur or 40), function()
-                if self.EncounterID == encID then self:SetDebuffOverviewContainersShown(false, "UlatekGraspingFangsOverview") end
+                if self.EncounterID == encID then self:SetUlatekGraspingFangsOverviewsShown(false) end
             end)
         end
     else
-        self:SetDebuffOverviewContainersShown(false, "UlatekGraspingFangsOverview")
+        self:SetUlatekGraspingFangsOverviewsShown(false)
     end
 
     if not wrongTargetAlert or not wrongTargetAlert.enabled or not self:EvaluateLoad(wrongTargetAlert) then return end
@@ -259,7 +349,7 @@ NSI.EncounterAlertStop[encID] = function(self)
         for _, timer in ipairs(self.UlatekGraspingFangsTimers) do timer:Cancel() end
         self.UlatekGraspingFangsTimers = nil
     end
-    self:SetDebuffOverviewContainersShown(false, "UlatekGraspingFangsOverview")
+    self:SetUlatekGraspingFangsOverviewsShown(false)
     if self.UlatekWrongTargetTimers then
         for _, timer in ipairs(self.UlatekWrongTargetTimers) do timer:Cancel() end
         self.UlatekWrongTargetTimers = nil
