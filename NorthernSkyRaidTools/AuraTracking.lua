@@ -1779,10 +1779,9 @@ end
 -- Aura data for other units is a secret value, so a set can never ask "does this unit have the debuff".
 -- Instead every tracked unit keeps a static row underneath its container: the row is always shown in the
 -- inactive color, and the aura button covers it in the regular color exactly while the debuff is up.
--- The row is a sibling of the container (not a child) so its frame level can sit below the pooled buttons,
--- and it is never anchored to the container: containers carry DisableUntrustedLayoutScriptsTemplate, so
--- anchoring to one would make the row inherit that forbidden aspect. LayoutDebuffOverviewSets gives the
--- rows their own chain off the mover, mirroring the container chain point for point.
+-- The row is a sibling of the container (not a child) so its frame level can sit below the pooled buttons.
+-- Nothing is ever anchored to the container (it forbids that once it has an aura group); instead
+-- LayoutDebuffOverviewSets chains the rows off the mover and pins each container onto its own row.
 local function EnsureDebuffOverviewBaseRow(self, state)
     local settings = NSRT.ReminderSettings.DebuffOverviewSettings
     local container = state.container
@@ -1884,12 +1883,15 @@ end
 -- Positions every debuff overview set. Units that are missing or filtered out by subgroup are
 -- skipped so the rows stay compact, and sets that are shown at the same time become parallel
 -- columns (rows, when the lists grow sideways) next to the shared mover.
+-- A container with no matching aura lays out as 1x1, so chaining containers gives a compact list of
+-- debuffed units only. With showInactive the fixed-size base rows are chained instead and each
+-- container is pinned to its own row, so the aura button always lands on the right name.
 function NSI:LayoutDebuffOverviewSets()
     local sets = self.DebuffOverviewContainerSetsByName
     local anchor = self.DebuffOverviewMover
     if not sets or not anchor then return end
     local settings = NSRT.ReminderSettings.DebuffOverviewSettings
-    local growDirection = GetDebuffOverviewFlow(settings)
+    local growDirection, _, flowAnchor = GetDebuffOverviewFlow(settings)
     local vertical = growDirection == "Up" or growDirection == "Down"
     local spacing = settings.Spacing or 0
     local shownSets = self.DebuffOverviewShownSets or {}
@@ -1919,16 +1921,20 @@ function NSI:LayoutDebuffOverviewSets()
             local yOffset = vertical and 0 or -setOffset
             local previousContainer, previousRow
             for _, state in ipairs(ordered) do
-                local container = state.container
-                AnchorDebuffOverviewRow(container, growDirection, previousContainer, anchor, spacing, xOffset, yOffset)
+                local container, row = state.container, state.baseRow
+                if state.showInactive and row then
+                    AnchorDebuffOverviewRow(row, growDirection, previousRow, anchor, spacing, xOffset, yOffset)
+                    row:Show()
+                    previousRow = row
+                    container:ClearAllPoints()
+                    container:SetPoint(flowAnchor, row, flowAnchor)
+                else
+                    AnchorDebuffOverviewRow(container, growDirection, previousContainer, anchor, spacing, xOffset, yOffset)
+                    previousContainer = container
+                    if row then row:Hide() end
+                end
                 container:SetShown(true)
                 container:SetEnabled(true)
-                previousContainer = container
-                if state.baseRow then
-                    AnchorDebuffOverviewRow(state.baseRow, growDirection, previousRow, anchor, spacing, xOffset, yOffset)
-                    state.baseRow:SetShown(state.showInactive == true)
-                    previousRow = state.baseRow
-                end
             end
             for _, state in ipairs(states) do
                 if not state.visible then
@@ -1985,7 +1991,6 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
                 self.DebuffOverviewFakePreviewConfig.backgroundOnly = overrides.backgroundOnly
             end
         end
-        self.DebuffOverviewContainerSets = existingSet
         self:UpdateDebuffOverviewContainers()
         return existingSet
     end
@@ -1999,10 +2004,9 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
     end
 
     local settings = NSRT.ReminderSettings.DebuffOverviewSettings
-    local anchor = self.DebuffOverviewMover
     local copies = math.max(1, math.floor(containersPerUnit or 1))
     local frameCount = maxFrameCount or 1
-    local growDirection, flowAxis, flowAnchor, flowHorizontal, flowVertical = GetDebuffOverviewFlow(settings)
+    local _, flowAxis, flowAnchor, flowHorizontal, flowVertical = GetDebuffOverviewFlow(settings)
     local subgroupFilter = BuildDebuffOverviewSubgroupFilter(overrides and overrides.subgroups)
     local containerStates = {}
 
@@ -2042,15 +2046,6 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
             container:SetFlowLayoutAxis(flowAxis)
             container:SetFlowLayoutAnchorPoint(flowAnchor)
             container:SetFlowLayoutGrowthDirection(flowHorizontal, flowVertical)
-            if growDirection == "Up" then
-                container:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 8)
-            elseif growDirection == "Down" then
-                container:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -8)
-            elseif growDirection == "Left" then
-                container:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -8, 0)
-            else
-                container:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
-            end
             container:AddAuraGroup("DebuffOverview", regularFilter, {
                 maxFrameCount = frameCount,
                 sortMethod = state.sortByDuration and AuraContainerSortMethod.ExpirationOnly or (state.useApplicationBar and AuraContainerSortMethod.AuraInstanceIDOnly or nil),
@@ -2068,7 +2063,7 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
             })
             container:Hide()
             container:SetEnabled(false)
-            EnsureDebuffOverviewBaseRow(self, state)
+            if state.showInactive then EnsureDebuffOverviewBaseRow(self, state) end
             containerStates[#containerStates + 1] = state
         end
     end
@@ -2076,7 +2071,6 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
         self.DebuffOverviewContainerOrder[#self.DebuffOverviewContainerOrder + 1] = containerName
     end
     self.DebuffOverviewContainerSetsByName[containerName] = containerStates
-    self.DebuffOverviewContainerSets = containerStates
     self:LayoutDebuffOverviewSets()
     return containerStates
 end
@@ -2109,7 +2103,7 @@ function NSI:UpdateDebuffOverviewContainers()
             for button in pairs(state.buttonRegions) do
                 ConfigureDebuffOverviewButton(self, state, button, state.unit)
             end
-            EnsureDebuffOverviewBaseRow(self, state)
+            if state.showInactive then EnsureDebuffOverviewBaseRow(self, state) end
         end
     end
     self:LayoutDebuffOverviewSets()
@@ -2173,11 +2167,11 @@ function NSI:UpdateDebuffOverviewFakePreview(rowCount, useApplicationBar, maxApp
     local rowHeight = height
     local barAnchorOffset = settings.IconPosition == "Right" and 0 or -height
     -- overrides.previewColumns previews one column per entry, each with its own backgroundColors and,
-    -- when the set keeps a row up for everybody, its own inactiveBackgroundColors. The first
-    -- previewActiveRows rows of each column are previewed as if the debuff were on them.
+    -- when the set keeps a row up for everybody, its own inactiveColors. The first two rows of each
+    -- column are previewed as if the debuff were on them.
     local columns = overrides and overrides.previewColumns or {{}}
     local showInactive = overrides and overrides.showInactive == true
-    local previewActiveRows = overrides and overrides.previewActiveRows or 2
+    local previewActiveRows = 2
     local columnSpan = #columns * ((vertical and rowWidth or rowHeight) + settings.Spacing) - settings.Spacing
     local rowSpan = rowCount * ((vertical and rowHeight or rowWidth) + settings.Spacing) - settings.Spacing
     frame:SetSize(vertical and columnSpan or rowSpan, vertical and rowSpan or columnSpan)
@@ -2199,7 +2193,7 @@ function NSI:UpdateDebuffOverviewFakePreview(rowCount, useApplicationBar, maxApp
         local isActive = not showInactive or index <= previewActiveRows
         local columnBackgroundColors = columns[columnIndex].backgroundColors or backgroundColors
         if not isActive then
-            columnBackgroundColors = columns[columnIndex].inactiveBackgroundColors or columnBackgroundColors
+            columnBackgroundColors = columns[columnIndex].inactiveColors or columnBackgroundColors
         end
         local columnOffsetX = vertical and (columnIndex - 1) * (rowWidth + settings.Spacing) or 0
         local columnOffsetY = vertical and 0 or -(columnIndex - 1) * (rowHeight + settings.Spacing)

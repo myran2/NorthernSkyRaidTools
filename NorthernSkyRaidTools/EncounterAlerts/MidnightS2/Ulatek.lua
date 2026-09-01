@@ -14,38 +14,23 @@ end
 -- Each side gets its own subgroup string, so "1,2"/"3,4" and "1,3,5,7"/"2,4,6,8" both work.
 -- An empty string means that side tracks nobody; the right side ships empty.
 local function ParseGroupList(text)
-    local subgroups, seen = {}, {}
+    local subgroups = {}
     for value in tostring(text or ""):gmatch("%d+") do
-        local group = tonumber(value)
-        if group and group >= 1 and group <= 8 and not seen[group] then
-            seen[group] = true
-            subgroups[#subgroups + 1] = group
-        end
+        subgroups[#subgroups + 1] = tonumber(value)
     end
     return subgroups
 end
 
--- Fallback for the always-on rows when no inactive color is configured: dark enough to read as "no debuff"
--- next to the regular color, without going fully black on a saturated hue.
-local function DimColor(color)
-    return {color[1] * 0.3 + 0.02, color[2] * 0.3 + 0.02, color[3] * 0.3 + 0.02, 0.85}
-end
-
 local function BuildGraspingFangsOverrides(alert, isLeftSide)
-    local leftColor = alert.LeftBackgroundColor or {1, 0, 0, 1}
-    local rightColor = alert.RightBackgroundColor or {0, 0.45, 1, 1}
-    local leftInactive = alert.LeftInactiveColor or DimColor(leftColor)
-    local rightInactive = alert.RightInactiveColor or DimColor(rightColor)
     local rightGroups = ParseGroupList(alert.RightGroups)
-    local showInactive = alert.ShowAllPlayers ~= false
-    local previewColumns = {{backgroundColors = leftColor, inactiveBackgroundColors = leftInactive}}
-    if #rightGroups > 0 then previewColumns[2] = {backgroundColors = rightColor, inactiveBackgroundColors = rightInactive} end
+    local previewColumns = {{backgroundColors = alert.LeftBackgroundColor, inactiveColors = alert.LeftInactiveColor}}
+    if #rightGroups > 0 then previewColumns[2] = {backgroundColors = alert.RightBackgroundColor, inactiveColors = alert.RightInactiveColor} end
     return {
-        backgroundColors = isLeftSide and leftColor or rightColor,
-        inactiveColors = isLeftSide and leftInactive or rightInactive,
-        showInactive = showInactive,
+        backgroundColors = isLeftSide and alert.LeftBackgroundColor or alert.RightBackgroundColor,
+        inactiveColors = isLeftSide and alert.LeftInactiveColor or alert.RightInactiveColor,
+        showInactive = alert.ShowAllPlayers ~= false,
         height = alert.BarHeight,
-        subgroups = isLeftSide and ParseGroupList(alert.LeftGroups or "1,2,3,4,5,6,7,8") or rightGroups,
+        subgroups = isLeftSide and ParseGroupList(alert.LeftGroups) or rightGroups,
         sortByRole = alert.SortByRole == true,
         backgroundOnly = true,
         hideValue = true,
@@ -226,8 +211,7 @@ NSI.InitializeAlerts[encID] = function(self)
             set = [[return function(NSI, value) for i = 15, 16 do NSRT.EncounterAlerts[3492][i].GraspingFangsOverview.BarHeight = value end NSI:UpdateUlatekGraspingFangsOverviews() end]],},
     }
     local data = {group = "Ula'tek", internalID = "GraspingFangsOverview", name = "Grasping Fangs Overview", text = nil, DisplayType = "Bar", encID = encID, phase = 1, TTS = false, dur = 40,
-        -- v2 renamed the first/second keys to left/right, so it re-seeds every one of them
-        Version = {versionNumber = 2, [2] = {LeftBackgroundColor = {1, 0, 0, 1}, RightBackgroundColor = {0, 0.45, 1, 1},
+        Version = {versionNumber = 1, [1] = {LeftBackgroundColor = {1, 0, 0, 1}, RightBackgroundColor = {0, 0.45, 1, 1},
             LeftInactiveColor = {0.32, 0.02, 0.02, 0.85}, RightInactiveColor = {0.02, 0.155, 0.32, 0.85},
             LeftGroups = "1,2,3,4,5,6,7,8", RightGroups = "", SortByRole = false, ShowAllPlayers = true}},
         spellID = 1311611, id = 0.2, difficulties = {15, 16}, isSpecialDisplay = true, BlockCopy = true, NoEdit = true, Preview = UlatekGraspingFangsPreview, enabled = false,
