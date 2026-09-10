@@ -1939,7 +1939,7 @@ end
 
 local function ConfigureDebuffOverviewButton(self, state, button, unit)
     local settings = NSRT.ReminderSettings.DebuffOverviewSettings
-    local width = settings.Width
+    local width = state.width or settings.Width
     local height = state.height or settings.Height
     local buttonWidth = width + height
     local fontPath = self.LSM:Fetch("font", settings.Font)
@@ -1999,7 +1999,7 @@ local function ConfigureDebuffOverviewButton(self, state, button, unit)
     end
     local backgroundColors = state.backgroundColors or settings.backgroundColors
     regions.bar:SetBackdropColor(unpack(backgroundColors))
-    regions.border:SetBackdropBorderColor(unpack(settings.borderColors))
+    regions.border:SetBackdropBorderColor(unpack(state.borderColors or settings.borderColors))
     regions.textLayer:SetFrameLevel(button:GetFrameLevel() + 2)
 
     regions.name:ClearAllPoints()
@@ -2017,7 +2017,8 @@ local function ConfigureDebuffOverviewButton(self, state, button, unit)
         regions.duration:Show()
         button:ClearDurationText()
         button:ClearDurationBar()
-        button:SetApplicationCount(regions.duration, {})
+        -- Blizzard hides the count below 2 applications unless a formatter is supplied
+        button:SetApplicationCount(regions.duration, state.applicationCountFormatter and {formatter = state.applicationCountFormatter} or {})
         button:SetApplicationBar(regions.bar, {maxApplications = state.maxApplications})
     else
         regions.duration:SetFont(fontPath, settings.TimerFontSize, settings.FontFlags)
@@ -2073,9 +2074,9 @@ local function EnsureDebuffOverviewBaseRow(self, state)
     end
     local height = state.height or settings.Height
     local barOffset = settings.IconPosition == "Right" and 0 or height
-    row:SetSize(settings.Width + height, height)
+    row:SetSize((state.width or settings.Width) + height, height)
     row.Background:SetVertexColor(unpack(state.inactiveColors or state.backgroundColors or settings.backgroundColors))
-    local borderColor = settings.borderColors
+    local borderColor = state.borderColors or settings.borderColors
     for _, border in pairs(row.Border) do
         border:SetVertexColor(unpack(borderColor))
     end
@@ -2160,7 +2161,6 @@ function NSI:LayoutDebuffOverviewSets()
     local settings = NSRT.ReminderSettings.DebuffOverviewSettings
     local growDirection, _, flowAnchor = GetDebuffOverviewFlow(settings)
     local vertical = growDirection == "Up" or growDirection == "Down"
-    local spacing = settings.Spacing or 0
     local shownSets = self.DebuffOverviewShownSets or {}
     local setOffset = 0
 
@@ -2170,6 +2170,8 @@ function NSI:LayoutDebuffOverviewSets()
             local setShown = shownSets[containerName]
             local sortByRole = states[1].sortByRole
             local height = states[1].height or settings.Height
+            local spacing = states[1].spacing or settings.Spacing or 0
+            local width = states[1].width or settings.Width
             local ordered = {}
             for _, state in ipairs(states) do
                 local visible = setShown and DebuffOverviewUnitMatchesSet(state)
@@ -2212,7 +2214,7 @@ function NSI:LayoutDebuffOverviewSets()
                 end
             end
             if #ordered > 0 then
-                setOffset = setOffset + (vertical and (settings.Width + height + spacing) or (height + spacing))
+                setOffset = setOffset + (vertical and (width + height + spacing) or (height + spacing))
             end
         end
     end
@@ -2230,9 +2232,13 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
                 state.maxApplications = maxApplications or state.maxApplications
                 if sortByDuration ~= nil then state.sortByDuration = sortByDuration == true end
                 state.height = overrides and overrides.height or state.height
+                state.width = overrides and overrides.width or state.width
                 state.barColors = overrides and overrides.barColors or state.barColors
                 state.backgroundColors = overrides and overrides.backgroundColors or state.backgroundColors
                 state.inactiveColors = overrides and overrides.inactiveColors or state.inactiveColors
+                state.applicationCountFormatter = overrides and overrides.applicationCountFormatter or state.applicationCountFormatter
+                state.borderColors = overrides and overrides.borderColors or state.borderColors
+                state.spacing = overrides and overrides.spacing or state.spacing
                 if overrides and overrides.subgroups then
                     state.subgroups = BuildDebuffOverviewSubgroupFilter(overrides.subgroups)
                 end
@@ -2272,6 +2278,7 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
         local displayName = NSAPI:Shorten(unit, nil, false, "GlobalNickNames", true, true) or UnitName(unit) or unit
         for copyIndex = 1, copies do
             local height = overrides and overrides.height or settings.Height
+            local width = overrides and overrides.width or settings.Width
             local state = {
                 unit = unit,
                 raidIndex = raidIndex,
@@ -2279,12 +2286,16 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
                 sortByRole = overrides and overrides.sortByRole == true,
                 showInactive = overrides and overrides.showInactive == true,
                 inactiveColors = overrides and overrides.inactiveColors,
+                applicationCountFormatter = overrides and overrides.applicationCountFormatter,
+                borderColors = overrides and overrides.borderColors,
+                spacing = overrides and overrides.spacing,
                 displayName = displayName,
                 invertFill = invertFill == true,
                 useBarColorAsBackground = useBarColorAsBackground == true,
                 useApplicationBar = useApplicationBar == true,
                 maxApplications = maxApplications or 1,
                 height = overrides and overrides.height,
+                width = overrides and overrides.width,
                 barColors = overrides and overrides.barColors,
                 backgroundColors = overrides and overrides.backgroundColors,
                 sortByDuration = sortByDuration == true,
@@ -2298,7 +2309,7 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
             )
             state.container = container
             container:SetFrameStrata("HIGH")
-            container:SetSize(settings.Width + height, height)
+            container:SetSize(width + height, height)
             container:SetUnit(unit)
             container:SetFlowLayoutAxis(flowAxis)
             container:SetFlowLayoutAnchorPoint(flowAnchor)
@@ -2312,7 +2323,7 @@ function NSI:CreateDebuffOverviewContainers(regularFilter, candidateFilters, con
                     ConfigureDebuffOverviewButton(self, state, button, unit)
                 end,
                 layout = {
-                    elementWidth = settings.Width + height,
+                    elementWidth = width + height,
                     elementHeight = height,
                     elementSpacing = 0,
                     lineSpacing = 0,
@@ -2342,12 +2353,13 @@ function NSI:UpdateDebuffOverviewContainers()
         for _, state in ipairs(states) do
             local container = state.container
             local height = state.height or settings.Height
-            container:SetSize(settings.Width + height, height)
+            local width = state.width or settings.Width
+            container:SetSize(width + height, height)
             container:SetFlowLayoutAxis(flowAxis)
             container:SetFlowLayoutAnchorPoint(flowAnchor)
             container:SetFlowLayoutGrowthDirection(flowHorizontal, flowVertical)
             container:SetAuraGroupLayout("DebuffOverview", {
-                elementWidth = settings.Width + height,
+                elementWidth = width + height,
                 elementHeight = height,
                 elementSpacing = 0,
                 lineSpacing = 0,
@@ -2415,7 +2427,7 @@ end
 
 function NSI:UpdateDebuffOverviewFakePreview(rowCount, useApplicationBar, maxApplications, overrides, backgroundOnly)
     local settings = NSRT.ReminderSettings.DebuffOverviewSettings
-    local width = settings.Width
+    local width = overrides and overrides.width or settings.Width
     local height = overrides and overrides.height or settings.Height
     local barColors = overrides and overrides.barColors or settings.barColors
     local backgroundColors = overrides and overrides.backgroundColors
@@ -2423,6 +2435,8 @@ function NSI:UpdateDebuffOverviewFakePreview(rowCount, useApplicationBar, maxApp
         backgroundColors = useApplicationBar and barColors or settings.backgroundColors
     end
     local fillBackgroundColors = backgroundColors or barColors
+    local borderColors = overrides and overrides.borderColors or settings.borderColors
+    local spacing = overrides and overrides.spacing or settings.Spacing or 0
     local frame = self.DebuffOverviewFakePreview
     if not frame then
         frame = CreateFrame("Frame", nil, UIParent)
@@ -2438,8 +2452,8 @@ function NSI:UpdateDebuffOverviewFakePreview(rowCount, useApplicationBar, maxApp
     local columns = overrides and overrides.previewColumns or {{}}
     local showInactive = overrides and overrides.showInactive == true
     local previewActiveRows = 2
-    local columnSpan = #columns * ((vertical and rowWidth or rowHeight) + settings.Spacing) - settings.Spacing
-    local rowSpan = rowCount * ((vertical and rowHeight or rowWidth) + settings.Spacing) - settings.Spacing
+    local columnSpan = #columns * ((vertical and rowWidth or rowHeight) + spacing) - spacing
+    local rowSpan = rowCount * ((vertical and rowHeight or rowWidth) + spacing) - spacing
     frame:SetSize(vertical and columnSpan or rowSpan, vertical and rowSpan or columnSpan)
     frame:ClearAllPoints()
     if growDirection == "Up" then
@@ -2461,8 +2475,8 @@ function NSI:UpdateDebuffOverviewFakePreview(rowCount, useApplicationBar, maxApp
         if not isActive then
             columnBackgroundColors = columns[columnIndex].inactiveColors or columnBackgroundColors
         end
-        local columnOffsetX = vertical and (columnIndex - 1) * (rowWidth + settings.Spacing) or 0
-        local columnOffsetY = vertical and 0 or -(columnIndex - 1) * (rowHeight + settings.Spacing)
+        local columnOffsetX = vertical and (columnIndex - 1) * (rowWidth + spacing) or 0
+        local columnOffsetY = vertical and 0 or -(columnIndex - 1) * (rowHeight + spacing)
         local row = frame.rows[rowIndex]
         if not row then
             row = CreateFrame("Frame", nil, frame)
@@ -2479,13 +2493,13 @@ function NSI:UpdateDebuffOverviewFakePreview(rowCount, useApplicationBar, maxApp
         end
         row:ClearAllPoints()
         if growDirection == "Up" then
-            row:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", columnOffsetX, (index - 1) * (height + settings.Spacing))
+            row:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", columnOffsetX, (index - 1) * (height + spacing))
         elseif growDirection == "Left" then
-            row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(index - 1) * (rowWidth + settings.Spacing), columnOffsetY)
+            row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(index - 1) * (rowWidth + spacing), columnOffsetY)
         elseif growDirection == "Right" then
-            row:SetPoint("TOPLEFT", frame, "TOPLEFT", (index - 1) * (rowWidth + settings.Spacing), columnOffsetY)
+            row:SetPoint("TOPLEFT", frame, "TOPLEFT", (index - 1) * (rowWidth + spacing), columnOffsetY)
         else
-            row:SetPoint("TOPLEFT", frame, "TOPLEFT", columnOffsetX, -(index - 1) * (height + settings.Spacing))
+            row:SetPoint("TOPLEFT", frame, "TOPLEFT", columnOffsetX, -(index - 1) * (height + spacing))
         end
         row:SetSize(width + height, height)
         row.Bar:ClearAllPoints()
@@ -2512,7 +2526,7 @@ function NSI:UpdateDebuffOverviewFakePreview(rowCount, useApplicationBar, maxApp
             row.Background:Hide()
         end
         row.Border:SetAllPoints(row)
-        row.Border:SetBackdropBorderColor(unpack(settings.borderColors))
+        row.Border:SetBackdropBorderColor(unpack(borderColors))
         row.TextLayer:SetAllPoints(row)
         row.Icon:SetSize(height, height)
         row.Icon:SetTexture(iconInfo and iconInfo.iconID)

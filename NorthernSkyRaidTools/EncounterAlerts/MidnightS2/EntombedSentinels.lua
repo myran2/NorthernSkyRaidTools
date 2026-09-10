@@ -240,6 +240,37 @@ NSI.InitializeAlerts[encID] = function(self)
     }
     self:AddEncounterAlert(data)
 
+    local IntermissionOverviewPreview = [[return function(self) self:PreviewSentinelsIntermissionOverview() end]]
+    local intermissionOverviewOptions = {
+        {Type = "Color", label = "Bar Color",
+            get = [[return function() local a = NSRT.EncounterAlerts[3445][16].IntermissionOverview local c = a.BarColor or NSRT.ReminderSettings.DebuffOverviewSettings.barColors return c[1], c[2], c[3], c[4] end]],
+            set = [[return function(NSI, r, g, b, a) for i = 14, 16 do NSRT.EncounterAlerts[3445][i].IntermissionOverview.BarColor = {r, g, b, a} end NSI:UpdateSentinelsIntermissionOverview() end]],},
+        {Type = "Slider", label = "Bar Width", min = 60, max = 500, step = 1,
+            get = [[return function() local a = NSRT.EncounterAlerts[3445][16].IntermissionOverview return a.BarWidth or NSRT.ReminderSettings.DebuffOverviewSettings.Width end]],
+            set = [[return function(NSI, value) for i = 14, 16 do NSRT.EncounterAlerts[3445][i].IntermissionOverview.BarWidth = value end NSI:UpdateSentinelsIntermissionOverview() end]],
+            tooltip = {title = "Bar Width", desc = "Width of the bar without the icon. The icon adds the bar height on top."}},
+        {Type = "Slider", label = "Bar Height", min = 10, max = 100, step = 1,
+            get = [[return function() local a = NSRT.EncounterAlerts[3445][16].IntermissionOverview return a.BarHeight or NSRT.ReminderSettings.DebuffOverviewSettings.Height end]],
+            set = [[return function(NSI, value) for i = 14, 16 do NSRT.EncounterAlerts[3445][i].IntermissionOverview.BarHeight = value end NSI:UpdateSentinelsIntermissionOverview() end]],},
+        {Type = "Color", label = "Border Color",
+            get = [[return function() local a = NSRT.EncounterAlerts[3445][16].IntermissionOverview local c = a.BorderColor or NSRT.ReminderSettings.DebuffOverviewSettings.borderColors return c[1], c[2], c[3], c[4] end]],
+            set = [[return function(NSI, r, g, b, a) for i = 14, 16 do NSRT.EncounterAlerts[3445][i].IntermissionOverview.BorderColor = {r, g, b, a} end NSI:UpdateSentinelsIntermissionOverview() end]],},
+        {Type = "Slider", label = "Spacing", min = -5, max = 20, step = 1,
+            get = [[return function() local a = NSRT.EncounterAlerts[3445][16].IntermissionOverview return a.Spacing or NSRT.ReminderSettings.DebuffOverviewSettings.Spacing or 0 end]],
+            set = [[return function(NSI, value) for i = 14, 16 do NSRT.EncounterAlerts[3445][i].IntermissionOverview.Spacing = value end NSI:UpdateSentinelsIntermissionOverview() end]],
+            tooltip = {title = "Spacing", desc = "Gap between rows. Negative values overlap the 1px borders; use 1 or more to separate rows at small bar heights."}},
+        {Type = "Slider", label = "Show Duration", min = 5, max = 60, step = 1,
+            get = [[return function() return NSRT.EncounterAlerts[3445][16].IntermissionOverview.dur or 30 end]],
+            set = [[return function(NSI, value) for i = 14, 16 do NSRT.EncounterAlerts[3445][i].IntermissionOverview.dur = value end end]],
+            tooltip = {title = "Show Duration", desc = "Seconds the overview stays visible after the transition debuffs go out. It also hides as soon as the next phase starts."}},
+    }
+
+    local data = {group = "Sentinels", internalID = "IntermissionOverview", name = "Intermission Debuff Overview", text = "Intermission Debuff Overview", DisplayType = "Bar", encID = encID,
+        phase = nil, TTS = false, dur = 30, spellID = nil, customIcon = 1284590, difficulties = {14, 15, 16}, enabled = false, isSpecialDisplay = true, BlockCopy = true, NoEdit = true,
+        Preview = IntermissionOverviewPreview, id = 0.1, BarWidth = 150, BarHeight = 25, BorderColor = {0.35, 0.35, 0.35, 1}, Spacing = -1, extraOptions = intermissionOverviewOptions,
+    }
+    self:AddEncounterAlert(data)
+
     local RadarPreview = [[
         return function(self)
             if self.SentinelsRadarPreview then
@@ -303,6 +334,87 @@ local function GetIntermissionTime(self, id)
     local alert = diffTable and diffTable.TransitionDebuffs
     local timers = alert and alert.phaseTimers and alert.phaseTimers[self.Phase or 1]
     return timers and timers[1]
+end
+
+local function GetIntermissionOverviewAlert(id)
+    local encounterAlerts = NSRT.EncounterAlerts[encID]
+    local diffData = encounterAlerts and (encounterAlerts[id] or encounterAlerts[16])
+    return diffData and diffData.IntermissionOverview
+end
+
+local IntermissionStackFormatter
+-- Default formatter hides the stack when its 1. We want to show the 1.
+local function GetIntermissionStackFormatter()
+    if IntermissionStackFormatter then return IntermissionStackFormatter end
+    IntermissionStackFormatter = C_StringUtil.CreateNumericRuleFormatter()
+    IntermissionStackFormatter:SetBreakpoints({
+        {
+            threshold = 0,
+            step = 1,
+            rounding = Enum.NumericRuleFormatRounding.Down,
+            format = "%d",
+        },
+    })
+    return IntermissionStackFormatter
+end
+
+local function BuildIntermissionOverviewOverrides(alert)
+    local overviewSettings = NSRT.ReminderSettings.DebuffOverviewSettings
+    return {
+        width = alert.BarWidth or overviewSettings.Width,
+        height = alert.BarHeight or overviewSettings.Height,
+        barColors = alert.BarColor or overviewSettings.barColors,
+        backgroundColors = overviewSettings.backgroundColors,
+        borderColors = alert.BorderColor or overviewSettings.borderColors,
+        spacing = alert.Spacing or overviewSettings.Spacing,
+        applicationCountFormatter = GetIntermissionStackFormatter(),
+    }
+end
+
+function NSI:UpdateSentinelsIntermissionOverview(alert)
+    alert = alert or GetIntermissionOverviewAlert(16)
+    if not alert then return end
+    -- bar fills by stack count (1/3, 2/3, full) and the number on the right is the stack count
+    self:CreateDebuffOverviewContainers("HARMFUL|IMPORTANT", nil, 1, 1, "SentinelsIntermissionOverview", false, false, true, 3, BuildIntermissionOverviewOverrides(alert), false)
+end
+
+function NSI:PreviewSentinelsIntermissionOverview()
+    local alert = GetIntermissionOverviewAlert(16)
+    if not alert then return end
+    self:UpdateSentinelsIntermissionOverview(alert)
+    self:PreviewDebuffOverviewContainers(nil, nil, nil, nil, "SentinelsIntermissionOverview", false, false, true, 3, 20, BuildIntermissionOverviewOverrides(alert), false)
+end
+
+local function HideIntermissionOverview(self)
+    if self.SentinelsIntermissionOverviewShowTimer then
+        self.SentinelsIntermissionOverviewShowTimer:Cancel()
+        self.SentinelsIntermissionOverviewShowTimer = nil
+    end
+    if self.SentinelsIntermissionOverviewHideTimer then
+        self.SentinelsIntermissionOverviewHideTimer:Cancel()
+        self.SentinelsIntermissionOverviewHideTimer = nil
+    end
+    self:SetDebuffOverviewContainersShown(false, "SentinelsIntermissionOverview")
+end
+
+local function ScheduleIntermissionOverview(self, id)
+    HideIntermissionOverview(self)
+    if not id then return end
+    local alert = GetIntermissionOverviewAlert(id)
+    if not alert or not alert.enabled or not self:EvaluateLoad(alert) then return end
+    local showAt = GetIntermissionTime(self, id)
+    if not showAt then return end
+    self:UpdateSentinelsIntermissionOverview(alert)
+    local phase = self.Phase
+    self.SentinelsIntermissionOverviewShowTimer = C_Timer.NewTimer(showAt, function()
+        self.SentinelsIntermissionOverviewShowTimer = nil
+        if self.EncounterID ~= encID or self.Phase ~= phase then return end
+        self:SetDebuffOverviewContainersShown(true, "SentinelsIntermissionOverview")
+        self.SentinelsIntermissionOverviewHideTimer = C_Timer.NewTimer(alert.dur or 30, function()
+            self.SentinelsIntermissionOverviewHideTimer = nil
+            self:SetDebuffOverviewContainersShown(false, "SentinelsIntermissionOverview")
+        end)
+    end)
 end
 
 local function CreateRadarFrame(self)
@@ -536,6 +648,7 @@ NSI.EncounterAlertStart[encID] = function(self, previewID, preview)
 
     StopRadarPreview(self)
     StartRadar(self, self:DifficultyCheck({14, 15, 16}))
+    ScheduleIntermissionOverview(self, self:DifficultyCheck({14, 15, 16}))
 end
 
 NSI.EncounterAlertStop[encID] = function(self)
@@ -547,6 +660,7 @@ NSI.EncounterAlertStop[encID] = function(self)
 
     StopRadarPreview(self)
     StopRadar(self)
+    HideIntermissionOverview(self)
 end
 
 NSI.DetectPhaseChange[encID] = function(self, e, info)
@@ -565,6 +679,7 @@ NSI.DetectPhaseChange[encID] = function(self, e, info)
         self:StartReminders(self.Phase)
         ScheduleBloodHitThreatCheck(self)
         StartRadar(self, self:DifficultyCheck({14, 15, 16}))
+        ScheduleIntermissionOverview(self, self:DifficultyCheck({14, 15, 16})) -- also hides the previous intermission's overview
         self.Timelines = {}
         self.PhaseSwapTime = now
     end

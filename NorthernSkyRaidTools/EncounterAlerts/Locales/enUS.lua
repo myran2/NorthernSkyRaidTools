@@ -175,6 +175,7 @@ L[3445] = {
     ["OrbSpawn"]           = {group = "Sentinels", name = "Orb Spawn", text = "Bait Orbs"},
     ["ShiftingProtovenom"] = {group = "Sentinels", name = "Shifting Protovenom", text = "Spread"},
     ["TransitionDebuffs"]  = {group = "Sentinels", name = "Transition Debuffs", text = "Number Game"},
+    ["IntermissionOverview"] = {group = "Sentinels", name = "Intermission Debuff Overview", text = "Intermission Debuff Overview"},
     ["Radar"]              = {group = "Sentinels", name = "Radar", text = ""},
 }
 
