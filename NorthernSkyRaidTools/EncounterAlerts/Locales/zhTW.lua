@@ -188,7 +188,6 @@ L[3455] = {
     ["Soaks"]      = {group = "伐許尼克", name = "分傷", text = "踩圈"},
     ["Waves"]      = {group = "伐許尼克", name = "波", text = "波"},
     ["WaveSpread"] = {group = "伐許尼克", name = "波 分散", text = "分散"},
-    ["WavesLine"]  = {group = "伐許尼克", name = "波 瞄準線", text = ""},
 }
 
 -- The Lost Explorers (3497)
@@ -219,7 +218,6 @@ L[3420] = {
     ["SerpentsFury"] = {group = "司佐拉", name = "毒蛇之怒", text = "集中"},
     ["WindsHelper"]  = {group = "司佐拉", name = "吹風方向"},
     ["VenomousSurgeTargets"] = {group = "司佐拉", name = "Debuff 目標"},
-    ["MarkerMap"]    = {group = "司佐拉", name = "標記地圖"},
 }
 
 -- The Twin Fangs (3421)
@@ -270,6 +268,7 @@ L[3429] = {
 L[3492] = {
     ["HitKnock"]            = {group = "烏拉特克", name = "蛇母之怒", text = "擊退"},
     ["Waves"]               = {group = "烏拉特克", name = "腐蝕波", text = "波"},
+    -- ["DragOut"]             = {group = "Ula'tek", name = "Drag out", text = "Drag out"},
     ["DamageAmpIn"]         = {group = "烏拉特克", name = "劇毒心臟", text = "準備增傷"},
     ["DamageAmp"]           = {group = "烏拉特克", name = "劇毒心臟", text = "增傷"},
     ["PlatformBreak"]       = {group = "烏拉特克", name = "包圍獵物", text = "平台裂開"},
@@ -279,6 +278,8 @@ L[3492] = {
     ["AddSoak"]             = {group = "烏拉特克", name = "Add Soak", text = "Add Soak"},
     ["Adds"]                = {group = "烏拉特克", name = "P3 小怪", text = "小怪"},
     ["BossSpawn"]           = {group = "烏拉特克", name = "王出現", text = "王出現"},
+    -- ["FirstBreak"]          = {group = "Ula'tek", name = "First Break", text = "First Break"},
+    -- ["SecondBreak"]         = {group = "Ula'tek", name = "Second Break", text = "Second Break"},
     ["Sweep"]               = {group = "烏拉特克", name = "大圈", text = "大圈"},
     ["Soak"]                = {group = "烏拉特克", name = "分傷", text = "分傷"},
     ["TransitionSoakFirst"] = {group = "烏拉特克", name = "分傷1", text = "分傷1"},
@@ -289,8 +290,8 @@ L[3492] = {
     ["InterruptAssignments"] = {group = "烏拉特克", name = "打斷分配", text = "打斷"},
     ["WaveDirection"] = {group = "烏拉特克", name = "波浪方向顯示", text = ""},
     ["WaveDirectionPrompt"] = {group = "烏拉特克", name = "波浪方向輸入", text = "方向巨集"},
-    ["WaveLines"] = {group = "烏拉特克", name = "P3 浪瞄準線", text = ""},
     ["InterruptAssignments"] = {group = "烏拉特克", name = "打斷分配", text = "打斷"},
     ["TransitionPatternSoaks"] = {group = "烏拉特克", name = "轉階分傷", text = "分傷"},
-    ["TransitionPatternArrow"] = {group = "烏拉特克", name = "轉階箭頭", text = ""},
+    -- ["PrePot"] = {group = "Ula'tek", name = "Pre-Pot", text = "Pre-Pot"},
+    -- ["AutoRelease"] = {group = "Ula'tek", name = "Auto Release", text = "Auto Release"},
 }
